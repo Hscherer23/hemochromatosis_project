@@ -1,0 +1,70 @@
+# Load necessary libraries
+library(data.table)  # Output: data.table 1.15.4 using 1 threads (see ?getDTthreads).  Latest news: r-datatable.com
+library(ggplot2)
+library(Cairo)
+
+# Set the path to the LD data file
+ld_data_path <- "/home/hscherer/crosslin_project_hemochromatosis/ld_output/emerge_chr6_hfe_slc17a1_ld.ld"
+
+# Load the LD data using fread from data.table package
+ld_data <- fread(ld_data_path)
+
+# Output: Data loaded successfully. Example of the loaded data:
+# CHR_A     BP_A      SNP_A CHR_B     BP_B      SNP_B          R2
+# <int>    <int>     <char> <int>    <int>     <char>       <num>
+# 1:     6 25723779 6:25723779     6 25723988 6:25723988 4.01037e-05
+# 2:     6 25723779 6:25723779     6 25724009 6:25724009 3.50995e-04
+# ...
+
+# Filter the LD data for the specific regions of interest
+ld_filtered <- ld_data[
+  (BP_A >= 25723743 & BP_A <= 25832052 & BP_B >= 26087421 & BP_B <= 26096437) |
+  (BP_B >= 25723743 & BP_B <= 25832052 & BP_A >= 26087421 & BP_A <= 26096437)
+]
+
+# Display the filtered LD data
+print(ld_filtered)
+
+# Output: The filtered data:
+#        CHR_A     BP_A      SNP_A CHR_B     BP_B      SNP_B          R2
+#        <int>    <int>     <char> <int>    <int>     <char>       <num>
+# 1:     6 25723779 6:25723779     6 26087621 6:26087621 6.74525e-05
+# 2:     6 25723779 6:25723779     6 26087686 6:26087686 1.71992e-04
+# 3:     6 25723779 6:25723779     6 26087689 6:26087689 2.06850e-05
+# ...
+
+# Create and save the LD plot using ggplot2 and Cairo
+CairoPNG("/home/hscherer/crosslin_project_hemochromatosis/ld_output/ld_plot.png", width=800, height=600)
+ggplot(ld_filtered, aes(x = BP_A, y = BP_B, fill = R2)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(
+    title = "LD between HFE and SLC17A1 Genes on Chromosome 6",
+    x = "Position in SLC17A1 region",
+    y = "Position in HFE region"
+  ) +
+  theme_minimal()
+dev.off()
+
+# Output: The plot was successfully saved as a PNG file at the specified location.
+
+# Summarize the R² values from the LD data
+summary(ld_data$R2)
+
+# Output: Summary of R² values:
+#      Min.   1st Qu.    Median      Mean   3rd Qu.      Max.
+# 0.0000000 0.0000004 0.0000055 0.0073814 0.0001179 1.0000000
+
+# Filter the data for SNP pairs with R² > 0.8
+high_ld <- ld_data[ld_data$R2 > 0.8,]
+
+# View the filtered high LD pairs
+print(high_ld)
+
+# Output: Filtered high LD pairs:
+#       CHR_A     BP_A      SNP_A CHR_B     BP_B      SNP_B       R2
+#       <int>    <int>     <char> <int>    <int>     <char>    <num>
+#    1:     6 25723779 6:25723779     6 25727527 6:25727527 0.997467
+#    2:     6 25723779 6:25723779     6 25734626 6:25734626 0.883734
+#    3:     6 25723779 6:25723779     6 25735029 6:25735029 0.828424
+# ...
