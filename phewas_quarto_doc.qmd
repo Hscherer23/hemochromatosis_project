@@ -1,0 +1,736 @@
+---
+title: "new_phewas_hem"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code.
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+## Setup and run plink recode for genotype data
+
+SNP identification based on their chromosomal location and not rs \#'s
+
+```{bash}
+grep -E "26093141|26093239|26090951" /lustre/project/crosslin/emerge/data/imputed_legacy/emerge_chr6.bim
+```
+
+**C282Y** [chr6:26093141]{.underline} (was confirmed by previous grep search)
+
+**H63D** (used a proxy only 3 bp away because location of SNP was not returned based on previous grep search...) [chr6:26093236]{.underline}
+
+Since rs1799945 was **missing**, we searched for **all SNPs within ±3,000 base pairs** using awk:
+
+```{bash}
+awk '$1 == 6 && $4 >= 26090000 && $4 <= 26094000' /lustre/project/crosslin/emerge/data/imputed_legacy/emerge_chr6.bim
+```
+
+6 6:26092316 0 26092316 T C 6 6:26092317 0 26092317 A G 6 6:26092358 0 26092358 T C
+
+6 6:26092496 0 26092496 A G 6 6:26092564 0 26092564 A C 6 6:26092615 0 26092615 T C
+
+6 6:26092617 0 26092617 C A 6 6:26092801 0 26092801 C T 6 6:26092865 0 26092865 G C
+
+6 6:26092865 0 26092865 T C 6 6:26093125 0 26093125 A G 6 6:26093141 0 26093141 A G
+
+6 6:26093180 0 26093180 C T 6 6:26093204 0 26093204 C G 6 6:26093236 0 26093236 A G
+
+6 6:26093297 0 26093297 A G 6 6:26093303 0 26093303 C T 6 6:26093474 0 26093474 G A
+
+6 6:26093636 0 26093636 C A 6 6:26093836 0 26093836 G A 6 6:26093914 0 26093914 A G
+
+6 6:26093916 0 26093916 A G 6 6:26093946 0 26093946 A G 6 6:26094026 0 26094026 T G
+
+6 6:26094026 0 26094026 A G 6 6:26094130 0 26094130 C T 6 6:26094190 0 26094190 C G
+
+then picked the closest proxy for H63D and documented both locations in the snps_to_keep.txt and recoded with those two locations:
+
+```{bash}
+idev -t 3
+module load plink/1.9
+
+echo -e "6:26093141\n6:26093236" > snps_to_keep.txt
+
+plink --bfile /lustre/project/crosslin/emerge/data/imputed_legacy/emerge_chr6 \
+      --extract snps_to_keep.txt \
+      --recode A \
+      --out /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered
+```
+
+\[hscherer\@cypress01-073 phewas\]\$ plink --bfile /lustre/project/crosslin/emerge/data/imputed_legacy/emerge_chr6 --extract snps_to_keep.txt --recode A --out /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered PLINK v1.90b6.24 64-bit (6 Jun 2021) www.cog-genomics.org/plink/1.9/ (C) 2005-2021 Shaun Purcell, Christopher Chang GNU General Public License v3 Logging to /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered.log. Options in effect: --bfile /lustre/project/crosslin/emerge/data/imputed_legacy/emerge_chr6 --extract snps_to_keep.txt --out /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered --recode A
+
+258385 MB RAM detected; reserving 129192 MB for main workspace. 2460111 variants loaded from .bim file. 105108 people (0 males, 0 females, 105108 ambiguous) loaded from .fam. Ambiguous sex IDs written to /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered.nosex . --extract: 2 variants remaining. Using 1 thread (no multithreaded calculations invoked). Before main variant filters, 105108 founders and 0 nonfounders present. Calculating allele frequencies... done. Total genotyping rate is exactly 1. 2 variants and 105108 people pass filters and QC. Note: No phenotypes present. --recode A to /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered.raw ... done.
+
+Open an R session in Cypress (R/4.4.1)
+
+```{r}
+# Load PLINK .raw file
+genotypes <- read.table("/lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/emerge_chr6_filtered.raw",
+                        header = TRUE, sep = "", stringsAsFactors = FALSE)
+
+dim(genotypes); head(genotypes)
+# [1] 105108      8
+#       FID      IID PAT MAT SEX PHENOTYPE X6.26093141_A X6.26093236_A
+# 1 68166500 68166500   0   0   0        -9             1             0
+# 2 68123049 68123049   0   0   0        -9             0             0
+# 3 68013874 68013874   0   0   0        -9             0             0
+# 4 68239447 68239447   0   0   0        -9             1             0
+# 5 68326725 68326725   0   0   0        -9             0             0
+# 6 68551325 68551325   0   0   0        -9             0             0
+
+# FID or IID?? - ask David bc he kept FID previously, so for now do that:
+identical(genotypes$FID, genotypes$IID)
+# TRUE
+
+# So:
+# Extract only SNPs and IDs and rename cols
+genotypes_filtered <- genotypes[, c("FID", "X6.26093141_A", "X6.26093236_A")]
+colnames(genotypes_filtered) <- c("id", "rs1800562_A", "rs1799945_proxy_A")
+
+table(genotypes_filtered$rs1800562_A)
+#     0     1     2 
+# 94683 10009   416 
+# in PLINK 'A' = count of the effect (alternate) allele for each individual
+# 0 = homozygous for reference allele
+# 1 = het
+# 2 = homozygouse for the alternate allele
+
+table(genotypes_filtered$rs1799945_proxy_A)
+#     0     1     2 
+# 79498 23622  1988 
+
+# determine # of cases? homozygous for those effect alleles or compound het for both SNPs...
+
+```
+
+Since we have two SNPs let's make a combined genotype column of the additive results of alleles:
+
+```{r}
+# Create a new column for genetic risk classification
+genotypes_filtered$hemgeno <- 0
+# Homozygous C282Y (AA) - Highest risk
+genotypes_filtered[genotypes_filtered$rs1800562_A == 2, "hemgeno"] <- 2
+# Compound Heterozygotes (C282Y = 1 and H63D = 1) - Moderate risk
+genotypes_filtered[genotypes_filtered$rs1800562_A == 1 & genotypes_filtered$rs1799945_proxy_A == 1, "hemgeno"] <- 2
+# Homozygous H63D (GG) - Lower risk
+genotypes_filtered[genotypes_filtered$rs1799945_proxy_A == 2, "hemgeno"] <- 1
+# Check the distribution of genetic risk categories
+table(genotypes_filtered$hemgeno)
+#      0      1      2 
+# 101389   1988   1731 
+
+```
+
+save the progress so far:
+
+```{r}
+save.image(file = "/lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/phewas_workspace_20240312.RData")
+# to load later:
+load("/lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/phewas_workspace_20240312.RData")
+```
+
+## Phenotype data now!
+
+utilize the outputfile1.csv to map the ICD codes to phecodes located here:
+
+```{bash}
+cd /lustre/project/crosslin/emerge/data/phenotype_data/icd_codes/output/
+```
+
+Load that file into R:
+
+```{r}
+library(data.table)  # Fast file reading
+
+# Load the ICD dataset
+icd_data <- fread("/lustre/project/crosslin/emerge/data/phenotype_data/icd_codes/output/outputfile1.csv")
+
+# Check 
+head(icd_data); dim(icd_data)  
+```
+
+Start a new R session w/ the phewas singularity image:
+
+```{bash}
+module load singularity/3.9.0
+
+singularity exec --bind /lustre/project/crosslin/crosslin_team/scherer/R_libs:/usr/local/lib/R/site-library /lustre/project/crosslin/crosslin_team/scherer/rocker_tidyverse_phewas.sif R
+
+# bind the singularity container w/ the wd I am in:
+singularity exec --bind /lustre/project/crosslin/crosslin_team/scherer:/mnt \
+   /lustre/project/crosslin/crosslin_team/scherer/rocker_tidyverse_phewas.sif R
+```
+
+then in R:
+
+```{r}
+load("/mnt/hemochromatosis/phewas/phewas_workspace_20240312.RData")
+```
+
+quickly redo the ICD code file read in to ensure no trailing or leading zeros were lost in the codes:
+
+```{r}
+library(readr)
+# Read in the ICD data with proper column types
+icd_data <- read_csv("outputfile1.csv", col_types = "ifci")
+
+# Rename columns for clarity
+names(icd_data) <- c("id", "age", "code", "vocabulary")
+
+head(icd_data); dim(icd_data)
+#         id age   code   vocabulary
+#      <int> <fct> <chr>       <int>
+# 1 42176277 45    285.29          9
+# 2 42543093 76    722.52          9
+# 3 42559441 77    530.81          9
+# 4 42582574 70    401.1           9
+# 5 42583910 81    R41.3          10
+# 6 42339856 59    611.72          9
+
+# [1] 41591601        4
+
+```
+
+run this code to bind the correct phewas/R setup and the .RData file:
+
+```{bash}
+singularity exec \
+--bind /lustre/project/crosslin/crosslin_team/scherer/R_libs:/usr/local/lib/R/site-library \
+--bind /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas:/phewas_project \
+/lustre/project/crosslin/crosslin_team/scherer/rocker_tidyverse_phewas.sif R
+```
+
+# Covariates
+
+Start with PCA
+
+```{r}
+# Load PCA data
+pca_data <- read.csv("/lustre/project/crosslin/emerge/data/accessory_files/chr1-22.plink_pca.e123_imputation_sample_manifest.csv")
+
+# Check first few rows
+head(pca_data)
+```
+
+Updated singularity exec command that binds all the directories with all the data we will need to load for the phewas:
+
+```{bash}
+singularity exec \
+--bind /lustre/project/crosslin/crosslin_team/scherer/R_libs:/usr/local/lib/R/site-library \
+--bind /lustre/project/crosslin/emerge/data/accessory_files:/mnt/accessory_files \
+--bind /lustre/project/crosslin/emerge/data/phenotype_data/demog/current:/mnt/demog_data \
+--bind /lustre/project/crosslin/emerge/data/phenotype_data/icd_codes:/mnt/icd_data \
+--bind /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas:/mnt/phewas_project \
+/lustre/project/crosslin/crosslin_team/scherer/rocker_tidyverse_phewas.sif R
+```
+
+```{r}
+library(data.table)
+# Load PCA Data
+pca_data <- fread("/mnt/accessory_files/chr1-22.plink_pca.e123_imputation_sample_manifest.csv")
+head(pca_data)
+
+# Load Demographic Data
+demog_data <- fread("/mnt/demog_data/EMERGE_201907_DEMO_GWAS.csv")
+head(demog_data)
+
+# Load ICD Code Data
+icd_data <- fread("/mnt/icd_data/outputfile1.csv")
+head(icd_data)
+
+# Load Genotype Data (previously saved)
+load("/mnt/phewas_project/phewas_workspace_20240312.RData")
+
+# Confirm Loaded Objects
+ls()
+
+# save again - to home dir because lustre one didn't have enough space at the moment
+save.image("~/ workspace_phewas_03182025.RData")
+```
+
+```{r}
+pca_filtered <- pca %>%
+  select(IID, sex2, site, PC1, PC2, PC3, PC4, PC5) %>%
+  rename(id = IID, sex = sex2)  # Renaming for consistency
+```
+
+make sure that participants are \>18 years old
+
+```{r}
+dim(icd_data)
+# [1] 41591601        4
+
+# Filter for participants 18 years and older
+icd_data <- icd_data %>% filter(age >= 18)
+
+dim(icd_data)
+# [1] 38945892        4
+# 2645709 removed!
+```
+
+remove unknown sex people
+
+```{r}
+pca_filtered <- pca_filtered %>% 
+  filter(!is.na(sex) & sex != "unknown" & sex != "")
+
+dim(pca_filtered)
+# 105086 8
+# original 105108 participants - 22 unknowns (determined by table(pca_filtered$sex)) so makes sense!
+
+# Update genotypes to match the filtered PCA dataset
+genotypes_filtered <- genotypes %>% 
+  filter(id %in% pca_filtered$id)
+```
+
+make sure all sites have enough carriers/homozygous individuals and none are too low:
+
+```{r}
+ site_case_counts <- genotypes %>%
+  inner_join(pca_filtered, by = "id") %>%  # Merge genotype & covariates data
+  filter(hemgeno > 0) %>%  # Keep only carriers (hemgeno = 1 or 2)
+  count(site, hemgeno)
+ 
+ print(site_case_counts)
+#    site hemgeno   n
+# 1  bsch       1  17
+# 2  bsch       2  13
+# 3  ccmc       1 116
+# 4  ccmc       2 117
+# 5  chop       1 202
+# 6  chop       2 104
+# 7  colu       1  51
+# 8  colu       2  15
+# 9  geis       1  55
+# 10 geis       2  60
+# 11 harv       1 653
+# 12 harv       2 583
+# 13 kpuw       1  55
+# 14 kpuw       2  64
+# 15 mayo       1 175
+# 16 mayo       2 179
+# 17 mrsh       1  67
+# 18 mrsh       2  81
+# 19 mtsi       1 140
+# 20 mtsi       2  23
+# 21 nwun       1 102
+# 22 nwun       2  77
+# 23 vand       1 355
+# 24 vand       2 415
+```
+
+move age from icd table to pca/covar one
+
+```{r}
+# Merge age from icd_data into pca_filtered using "id"
+pca_filtered <- pca_filtered %>%
+  left_join(icd_data %>% select(id, age), by = "id")
+
+# Check if the merge worked
+head(pca_filtered)
+```
+
+check NAs real quick - pca_filtered was accidentally merged to add the age col and it created uneccessary duplicates in that table compared to the icd_data table that has duplicate id's do to multiple occurrences... pca3 is just the filtered pca from above.
+
+```{r}
+# Check for missing values in pca3
+colSums(is.na(pca3))
+#   id  sex site  PC1  PC2  PC3  PC4  PC5 
+#    0    0    0    0    0    0    0    0 
+
+# Check for missing values in icd_data
+colSums(is.na(icd_data))
+#      id        age       code vocabulary 
+#      0          0      36499      25167 
+
+# remove those NAs because those are required for proper mapping...
+icd_data <- icd_data %>% drop_na(code, vocabulary)
+# Confirm no more missing values
+colSums(is.na(icd_data))
+   # id        age       code vocabulary 
+   #       0          0          0          0
+# better!
+```
+
+pca3 should all be unique id's and no duplicates:
+
+```{r}
+n_distinct(pca3$id) == nrow(pca3)  # Should return TRUE
+# [1] TRUE
+```
+
+make sure 18 years and older:
+
+```{r}
+ summary(icd_data$age)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 18.00   51.84   63.72   61.79   73.77   90.06 
+```
+
+make sure trailing and leading zeros in ICD codes remained when loading in data (have seen trailing so let's make sure leading are there):
+
+```{r}
+library(stringr)
+# Check if any codes START with "0" (leading zero)
+icd_data %>% filter(str_starts(code, "0")) %>% head(20)
+# yes all good:
+ #         id   age   code vocabulary
+ #       <int> <num> <char>      <int>
+ # 1: 42351795    64 008.45          9
+ # 2: 42502365    58 041.19          9
+ # 3: 42642372    35 041.02          9
+```
+
+# Map ICD codes to phecodes
+
+```{r}
+library(PheWAS)
+
+phenotypes <- createPhenotypes(icd_data, 
+                               id.sex = pca3 %>% 
+                                  transmute(id, gender = ifelse(sex == "male", "M", "F")),
+                               min.code.count = 2)
+# need to convert vocab id to whatever the reference table structure is:
+data(phecode_map)
+str(phecode_map)
+# vocabulary_id is chr
+icd_data <- icd_data %>%
+  mutate(vocabulary = case_when(
+    vocabulary == "9"  ~ "ICD9CM",
+    vocabulary == "10" ~ "ICD10CM",
+    TRUE ~ as.character(vocabulary)  # Keep other values as character
+  ))
+#rename vocabulary to vocabulary_id
+icd_data <- icd_data %>% rename(vocabulary_id = vocabulary)
+```
+
+ERROR: kept getting this one:
+
+Mapping codes to phecodes... Error in `inner_join()`: ! Can't join `x$vocabulary_id` with `y$vocabulary_id` due to incompatible types. ℹ `x$vocabulary_id` is a <double>. ℹ `y$vocabulary_id` is a <character>. Run `rlang::last_trace()` to see where the error occurred.
+
+And double checked and mutated the tables to both be tibbles, and mutated the vocabulary_id to be the same exact col names and both character types... confirmed with str() and code still spitting that same error out?
+
+So:
+
+```{r}
+mapped_data <- mapCodesToPhecodes(icd_data)
+# this worked!
+head(mapped_data)
+# A tibble: 6 × 3
+#         id   age phecode
+#      <int> <dbl> <chr>  
+# 1 42176277    45 285.2  
+# 2 42176277    45 285    
+# 3 42543093    76 722.6  
+# 4 42543093    76 722    
+# 5 42559441    77 530.11 
+# 6 42559441    77 530.1  
+dim(mapped_data)
+# [1] 54035224        3
+
+
+```
+
+workaround - create phenotypes manually from the mapped_data
+
+```{r}
+createPhenotypes_manual <- function(mapped_data, id.sex = NULL, min.code.count = 2, full.population.ids = NULL) {
+  library(dplyr)
+  library(tidyr)
+  
+  message("Aggregating codes...")
+  phecode <- mapped_data %>%
+    group_by(id, phecode) %>%
+    summarise(count = n(), .groups = "drop")
+  
+  # Filter based on min.code.count
+  phecode <- phecode %>%
+    mutate(count = ifelse(count < min.code.count, -1, count))
+  
+  message("Coalescing exclusions and min.code.count as applicable...")
+  phecode <- phecode %>%
+    group_by(id, phecode) %>%
+    summarise(count = max(count), .groups = "drop")
+  
+  message("Reshaping data...")
+  phenotypes <- phecode %>%
+    pivot_wider(names_from = phecode, values_from = count, values_fill = 0)
+  
+  # Set exclusions (count -1) to NA
+  phenotypes[phenotypes == -1] <- NA
+  
+  # Add IDs with no mapped phecodes
+  if (!is.null(full.population.ids)) {
+    missing_ids <- setdiff(full.population.ids, phenotypes$id)
+    if (length(missing_ids) > 0) {
+      empty_record <- phenotypes[1, -1]
+      empty_record[] <- 0
+      phenotypes <- bind_rows(phenotypes, tibble(id = missing_ids, empty_record))
+    }
+  }
+
+  # Convert counts to logical if min.code.count applied
+  phenotypes <- phenotypes %>%
+    mutate(across(-id, ~ . > 0))
+
+  # Restrict sex-based phecodes if needed (not yet implemented here for simplicity)
+
+  return(phenotypes)
+}
+
+# run the function on the mapped data
+phenotypes <- createPhenotypes_manual(
+  mapped_data,
+  id.sex = pca3 %>% transmute(id, gender = ifelse(sex == "male", "M", "F")),
+  min.code.count = 2,
+  full.population.ids = pca3$id
+) 
+```
+
+export phenotypes to PLINK
+
+```{r}
+plinkPhewasExport(phenotypes, file = "full_phenotype_matrix.phe")
+```
+
+but also trying running it in R with PheWAS package (just to try both ways...)
+
+```{r}
+data <- genotypes_filtered %>%
+  inner_join(pca3, by = "id") %>%
+  inner_join(phenotypes, by = "id")
+# define what to include
+phenotype_names <- names(phenotypes)[-1]  # exclude id
+# genotype_names <- c("rs1800562_A", "rs1799945_proxy_A")
+genotype_names <- c("rs1800562_A", "rs1799945_proxy_A", "hemgeno")
+covariate_names <- c("age", "sex", "site", "PC1", "PC2", "PC3", "PC4", "PC5")
+
+# run the phewas
+results <- phewas(
+  phenotypes = phenotype_names,
+  genotypes = genotype_names,
+  covariates = covariate_names,
+  data = data,
+  cores = 4  # or however many cores your system allows
+)
+
+```
+
+error: a col name was missing
+
+```{r}
+setdiff(c(phenotype_names, genotype_names, covariate_names), colnames(data))
+# age
+# add age in (it was located in the icd_data only)
+library(data.table) # more efficient than dplyr was...
+# convert your data frames to data.tables if they aren’t already
+setDT(data)
+setDT(icd_data)
+
+# add age from icd_data to data (matched by id)
+data[icd_data, on = "id", age := i.age]
+```
+
+rerun:
+
+```{r}
+results <- phewas(
+  phenotypes = phenotype_names,
+  genotypes = genotype_names,
+  covariates = covariate_names,
+  data = data,
+  cores = 4  # or however many cores your system allows
+)
+```
+
+taking awhile to run, may have to run slurm script, but running!
+
+Ran it on slurm - took \~ 2 hours with 8 cores
+
+```{r}
+# load the workspace from previous session
+load("/home/hscherer/workspace_phewas_03252025.RData")
+
+# load libraries
+library(PheWAS)
+library(data.table)
+library(readr)
+
+cat("  Libraries loaded. Starting PheWAS...\n")
+
+# run the phewas
+results <- phewas(
+  phenotypes = phenotype_names,
+  genotypes = genotype_names,  # includes the two SNPs (and optionally hemgeno if you use it)
+  covariates = covariate_names,  # includes age, sex, site, PC1–PC5
+  data = data,
+  cores = 8
+)
+
+cat("  PheWAS complete. Saving results...\n")
+
+# save results to file
+save(results, file = "/lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas/phewas_result$
+
+
+cat("  Results saved to: /lustre/project/crosslin/crosslin_team/scherer/phewas_results_03252025.RData\n")
+```
+
+Load previous workspace into this R script then execute this R script in slurm:
+
+```{bash}
+
+#!/bin/bash
+#SBATCH --job-name=phewas_run
+#SBATCH --output=phewas_run.out
+#SBATCH --error=phewas_run.err
+#SBATCH --time=12:00:00
+#SBATCH --mem=120G
+#SBATCH --cpus-per-task=8
+#SBATCH --partition=centos7
+
+module load singularity/3.9.0
+
+singularity exec \
+--bind /lustre/project/crosslin/crosslin_team/scherer/R_libs:/usr/local/lib/R/site-library \
+--bind /lustre/project/crosslin/crosslin_team/scherer/hemochromatosis/phewas:/phewas_project \
+/lustre/project/crosslin/crosslin_team/scherer/rocker_tidyverse_phewas.sif Rscript phewas_03252025.R
+```
+
+```{bash}
+sbsatch phewas_03252025.sh
+```
+
+load the results into R workspace to analyze and plot:
+
+```{r}
+load("~/phewas_results_03252025.RData")
+head(results)
+#   phenotype         snp adjustment         beta         SE        OR          p
+# 1       008 rs1800562_A       <NA> -0.055878747 0.05103591 0.9456538 0.27356445
+# 2     008.6 rs1800562_A       <NA> -0.203361786 0.11263732 0.8159830 0.07100327
+# 3       038 rs1800562_A       <NA> -0.070738647 0.04055860 0.9317054 0.08113997
+# 4       081 rs1800562_A       <NA> -0.008291225 0.06082627 0.9917431 0.89157627
+# 5       112 rs1800562_A       <NA>  0.050920059 0.04412371 1.0522388 0.24848807
+# 6       117 rs1800562_A       <NA>  0.209567385 0.08587872 1.2331445 0.01467623
+#       type n_total n_cases n_controls HWE_p allele_freq n_no_snp note
+# 1 logistic   84517    4324      80193     1  0.05423169        0     
+# 2 logistic   86326    1020      85306     1  0.05417256        0     
+# 3 logistic   85385    6986      78399     1  0.05400832        0     
+# 4 logistic   86800    2697      84103     1  0.05398041        0     
+# 5 logistic   83330    5674      77656     1  0.05421817        0     
+# 6 logistic   87043    1120      85923     1  0.05402502        0     
+dim(results)
+# [1] 5571   15
+
+# make phecodes into readable names
+results_labeled <- addPhecodeInfo(results)
+#   phenotype         snp adjustment         beta         SE        OR          p
+# 1       008 rs1800562_A       <NA> -0.055878747 0.05103591 0.9456538 0.27356445
+# 2     008.6 rs1800562_A       <NA> -0.203361786 0.11263732 0.8159830 0.07100327
+# 3       038 rs1800562_A       <NA> -0.070738647 0.04055860 0.9317054 0.08113997
+# 4       081 rs1800562_A       <NA> -0.008291225 0.06082627 0.9917431 0.89157627
+# 5       112 rs1800562_A       <NA>  0.050920059 0.04412371 1.0522388 0.24848807
+# 6       117 rs1800562_A       <NA>  0.209567385 0.08587872 1.2331445 0.01467623
+#       type n_total n_cases n_controls HWE_p allele_freq n_no_snp note
+# 1 logistic   84517    4324      80193     1  0.05423169        0     
+# 2 logistic   86326    1020      85306     1  0.05417256        0     
+# 3 logistic   85385    6986      78399     1  0.05400832        0     
+# 4 logistic   86800    2697      84103     1  0.05398041        0     
+# 5 logistic   83330    5674      77656     1  0.05421817        0     
+# 6 logistic   87043    1120      85923     1  0.05402502        0     
+#                                                                description
+# 1                                                     Intestinal infection
+# 2                                                          Viral Enteritis
+# 3                                                               Septicemia
+# 4 Infection/inflammation of internal prosthetic device; implant; and graft
+# 5                                                              Candidiasis
+# 6                                                                  Mycoses
+#                 group
+# 1 infectious diseases
+# 2 infectious diseases
+# 3 infectious diseases
+# 4 infectious diseases
+# 5 infectious diseases
+# 6 infectious diseases
+
+# okay great!
+# plot
+# Calculate Bonferroni threshold
+bonf_thresh <- 0.05 / nrow(results)
+
+# Save Manhattan plot
+phewasManhattan(
+  results_labeled,
+  suggestive.line = bonf_thresh,
+  annotate.phenotype.description = TRUE,
+  annotate.angle = 45,
+  title = "PheWAS Results with Bonferroni Correction"
+)
+# error
+annot_df <- results_labeled[, c("phenotype", "description")]
+
+phewasManhattan(
+  results_labeled,
+  annotate.phenotype.description = annot_df,
+  suggestive.line = bonf_thresh,
+  annotate.angle = 45
+)
+```
+
+okay error for some reason with the description and group cols even though they are there? let's pull what we need from results_labeled and create updated df for plotting...
+
+```{r}
+results_clean <- results_labeled[, c(
+  "phenotype",
+  "snp",
+  "p",
+  "description",
+  "group"
+)]
+
+# Add numeric group index (required by phewasManhattan)
+results_clean$groupnum <- as.numeric(factor(results_clean$group))
+
+head(results_cleaned)
+#   phenotype         snp          p                                                              description               group groupnum
+# 1       008 rs1800562_A 0.27356445                                                     Intestinal infection infectious diseases        8
+# 2     008.6 rs1800562_A 0.07100327                                                          Viral Enteritis infectious diseases        8
+# 3       038 rs1800562_A 0.08113997                                                               Septicemia infectious diseases        8
+# 4       081 rs1800562_A 0.89157627 Infection/inflammation of internal prosthetic device; implant; and graft infectious diseases        8
+# 5       112 rs1800562_A 0.24848807                                                              Candidiasis infectious diseases        8
+# 6       117 rs1800562_A 0.01467623                                                                  Mycoses infectious diseases        8
+```
+
+try plotting without bonferroni for now:
+
+```{r}
+phewasManhattan(
+  results_clean,
+  annotate.angle = 45,
+  annotate.size = 2.5,
+  title = "PheWAS Manhattan Plot (No Bonferroni Line)",
+  annotate.phenotype.description = TRUE  # uses the 'description' column
+)
+```
+
+still errors with the df that has description and group cols added... BUT!
+
+```{r}
+phewasManhattan(results)
+# works!
+```
