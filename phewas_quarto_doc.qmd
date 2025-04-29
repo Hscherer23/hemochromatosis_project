@@ -519,6 +519,8 @@ phenotype_names <- names(phenotypes)[-1]  # exclude id
 genotype_names <- c("rs1800562_A", "rs1799945_proxy_A", "hemgeno")
 covariate_names <- c("age", "sex", "site", "PC1", "PC2", "PC3", "PC4", "PC5")
 
+# went back HERE ^ ----------------------------------------------------------------------------------------------------------------------------------------------- and changed genotype_names to only the "hemgeno" variable we coded.. adding the two snps on top of that was redundant and created duplications in our phewas hits!
+
 # run the phewas
 results <- phewas(
   phenotypes = phenotype_names,
